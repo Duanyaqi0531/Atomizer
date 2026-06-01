@@ -1,0 +1,9 @@
+..\..\output\qrcodegen.o: ..\..\LVGL\src\extra\libs\qrcode\qrcodegen.c
+..\..\output\qrcodegen.o: F:\software\KEIL\ARM\ARMGCC\Bin\..\include\assert.h
+..\..\output\qrcodegen.o: F:\software\KEIL\ARM\ARMGCC\Bin\..\include\limits.h
+..\..\output\qrcodegen.o: F:\software\KEIL\ARM\ARMGCC\Bin\..\include\stdlib.h
+..\..\output\qrcodegen.o: F:\software\KEIL\ARM\ARMGCC\Bin\..\include\string.h
+..\..\output\qrcodegen.o: ..\..\LVGL\src\extra\libs\qrcode\qrcodegen.h
+..\..\output\qrcodegen.o: F:\software\KEIL\ARM\ARMGCC\Bin\..\include\stdbool.h
+..\..\output\qrcodegen.o: F:\software\KEIL\ARM\ARMGCC\Bin\..\include\stddef.h
+..\..\output\qrcodegen.o: F:\software\KEIL\ARM\ARMGCC\Bin\..\include\stdint.h
