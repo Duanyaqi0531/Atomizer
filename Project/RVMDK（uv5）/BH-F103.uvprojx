@@ -599,6 +599,11 @@
               <FileType>1</FileType>
               <FilePath>..\..\User\eeprom\bsp_at24c02.c</FilePath>
             </File>
+            <File>
+              <FileName>bsp_pwm.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\User\pwm\bsp_pwm.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>

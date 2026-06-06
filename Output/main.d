@@ -37,6 +37,8 @@
 ..\..\output\main.o: F:\software\KEIL\ARM\ARMGCC\Bin\..\include\string.h
 ..\..\output\main.o: F:\software\KEIL\ARM\ARMGCC\Bin\..\include\stdlib.h
 ..\..\output\main.o: ..\..\User\./eeprom/bsp_at24c02.h
+..\..\output\main.o: ..\..\User\./pwm/bsp_pwm.h
+..\..\output\main.o: ..\..\User\./led/bsp_led.h
 ..\..\output\main.o: ..\..\LVGL\src\core\../../lvgl.h
 ..\..\output\main.o: ..\..\LVGL\src\core\../../src/misc/lv_log.h
 ..\..\output\main.o: ..\..\LVGL\src\core\../../src/misc/../lv_conf_internal.h

@@ -17,29 +17,63 @@
 #include "./lcd/bsp_xpt2046_lcd.h"
 #include "./wifi/bsp_esp8266.h"
 #include "./eeprom/bsp_at24c02.h"
+#include "./pwm/bsp_pwm.h"
+#include "./led/bsp_led.h"
 #include <string.h>
 #include <stdio.h>
+
+volatile uint32_t g_ms_tick = 0;   /* SysTick 1ms 计数器 */
 #include "../../lvgl.h"
 #include "lv_port_disp.h"
 #include "lv_port_indev.h"
 
-static lv_obj_t * g_slider     = NULL;
-static lv_obj_t * g_pct_label   = NULL;
-static lv_obj_t * g_mode_btn    = NULL;
-static lv_obj_t * g_mode_label  = NULL;
-static lv_obj_t * g_info_label  = NULL;
-static lv_obj_t * g_btn_label   = NULL;
+static lv_obj_t * g_slider        = NULL;
+static lv_obj_t * g_pct_label     = NULL;
+static lv_obj_t * g_mode_btn      = NULL;
+static lv_obj_t * g_mode_label    = NULL;
+static lv_obj_t * g_info_label    = NULL;
+static lv_obj_t * g_btn_label     = NULL;
+static lv_obj_t * g_pwm_mode_btn  = NULL;
+static lv_obj_t * g_pwm_mode_lbl  = NULL;
 
 static volatile int g_mode     = 0;
-static int g_last_saved_val    = -1;    /* 记录上次保存的值，避免重复写 EEPROM */
+static int g_last_saved_val    = -1;
 
-#define EEPROM_VAL_ADDR   0x00          /* 滑条值存储在 EEPROM 地址 0 */
+#define EEPROM_VAL_ADDR   0x00
+
+/* ======== PWM 输出模式 ======== */
+#define PWM_MODE_CONT      0   /* 连续 */
+#define PWM_MODE_INT       1   /* 间断 0.5s on / 0.5s off */
+#define PWM_MODE_STOP      2   /* 停止 */
+
+static int      g_pwm_mode       = PWM_MODE_CONT;
+static uint8_t  g_pwm_duty       = 50;
+static int      g_pwm_output_on  = 1;
+static uint32_t g_pwm_toggle_tick = 0;
+
+static void pwm_apply(void)
+{
+    uint8_t out;
+    if (g_pwm_mode == PWM_MODE_CONT) {
+        out = g_pwm_duty;
+        LED_GREEN;
+    } else if (g_pwm_mode == PWM_MODE_INT) {
+        out = g_pwm_output_on ? g_pwm_duty : 0;
+        if (g_pwm_output_on) { LED_BLUE; } else { LED_RGBOFF; }
+    } else {
+        out = 0;
+        LED_RED;
+    }
+    PWM_SetDuty(out);
+}
 
 /* ======== 滑条回调 ======== */
 static void slider_cb(lv_event_t * e)
 {
     int v = (int)lv_slider_get_value(g_slider);
     lv_label_set_text_fmt(g_pct_label, "%d%%", v);
+    g_pwm_duty = (uint8_t)v;
+    pwm_apply();
 }
 
 /* ======== 模式切换 ======== */
@@ -58,6 +92,27 @@ static void mode_btn_cb(lv_event_t * e)
         lv_label_set_text(g_btn_label, "Switch Mode");
         lv_obj_clear_state(g_slider, LV_STATE_DISABLED);
     }
+}
+
+/* ======== PWM 输出模式切换 ======== */
+static void pwm_mode_btn_cb(lv_event_t * e)
+{
+    g_pwm_mode = (g_pwm_mode + 1) % 3;
+
+    if (g_pwm_mode == PWM_MODE_CONT) {
+        lv_label_set_text(g_pwm_mode_lbl, "PWM: Continuous");
+        lv_obj_set_style_bg_color(g_pwm_mode_btn, lv_palette_main(LV_PALETTE_GREEN), LV_STATE_DEFAULT);
+    } else if (g_pwm_mode == PWM_MODE_INT) {
+        lv_label_set_text(g_pwm_mode_lbl, "PWM: Intermittent");
+        lv_obj_set_style_bg_color(g_pwm_mode_btn, lv_palette_main(LV_PALETTE_ORANGE), LV_STATE_DEFAULT);
+        g_pwm_output_on = 1;
+        g_pwm_toggle_tick = g_ms_tick;
+    } else {
+        lv_label_set_text(g_pwm_mode_lbl, "PWM: Stop");
+        lv_obj_set_style_bg_color(g_pwm_mode_btn, lv_palette_main(LV_PALETTE_RED), LV_STATE_DEFAULT);
+    }
+
+    pwm_apply();
 }
 
 /* ======== 网页 HTML ======== */
@@ -133,12 +188,32 @@ static void create_ui(void)
 
     lv_obj_add_event_cb(g_mode_btn, mode_btn_cb, LV_EVENT_CLICKED, NULL);
 
+    /* ---- PWM 模式切换 ---- */
+    g_pwm_mode_lbl = lv_label_create(scr);
+    lv_label_set_text(g_pwm_mode_lbl, "PWM: Continuous");
+    lv_obj_set_style_text_color(g_pwm_mode_lbl, lv_color_white(), LV_STATE_DEFAULT);
+    lv_obj_set_style_text_font(g_pwm_mode_lbl, &lv_font_montserrat_14, LV_STATE_DEFAULT);
+    lv_obj_align(g_pwm_mode_lbl, LV_ALIGN_TOP_MID, 0, 108);
+
+    g_pwm_mode_btn = lv_btn_create(scr);
+    lv_obj_set_size(g_pwm_mode_btn, 160, 34);
+    lv_obj_align(g_pwm_mode_btn, LV_ALIGN_TOP_MID, 0, 128);
+    lv_obj_set_style_bg_color(g_pwm_mode_btn, lv_palette_main(LV_PALETTE_GREEN), LV_STATE_DEFAULT);
+    lv_obj_set_style_radius(g_pwm_mode_btn, 8, LV_STATE_DEFAULT);
+
+    lv_obj_t * pwm_btn_label = lv_label_create(g_pwm_mode_btn);
+    lv_label_set_text(pwm_btn_label, "Toggle PWM");
+    lv_obj_set_style_text_color(pwm_btn_label, lv_color_white(), LV_STATE_DEFAULT);
+    lv_obj_center(pwm_btn_label);
+
+    lv_obj_add_event_cb(g_pwm_mode_btn, pwm_mode_btn_cb, LV_EVENT_CLICKED, NULL);
+
     /* 百分比 */
     g_pct_label = lv_label_create(scr);
     lv_label_set_text(g_pct_label, "50%");
     lv_obj_set_style_text_color(g_pct_label, lv_color_white(), LV_STATE_DEFAULT);
     lv_obj_set_style_text_font(g_pct_label, &lv_font_montserrat_14, LV_STATE_DEFAULT);
-    lv_obj_align(g_pct_label, LV_ALIGN_TOP_MID, 0, 120);
+    lv_obj_align(g_pct_label, LV_ALIGN_TOP_MID, 0, 175);
 
     /* 滑轨 */
     static lv_style_t sb; lv_style_init(&sb);
@@ -163,7 +238,7 @@ static void create_ui(void)
     /* 滑条 */
     g_slider = lv_slider_create(scr);
     lv_obj_set_width(g_slider, 200);
-    lv_obj_align(g_slider, LV_ALIGN_TOP_MID, 0, 175);
+    lv_obj_align(g_slider, LV_ALIGN_TOP_MID, 0, 210);
     lv_slider_set_range(g_slider, 0, 100);
     lv_slider_set_value(g_slider, 50, LV_ANIM_OFF);
     lv_obj_add_style(g_slider, &sb, LV_PART_MAIN);
@@ -183,6 +258,11 @@ static void create_ui(void)
 
 int main(void)
 {
+    SysTick_Config(SystemCoreClock / 1000);   /* 硬件 1ms 定时 */
+
+    LED_GPIO_Config();   /* RGB LED 初始化 */
+    LED_RGBOFF;
+
     ILI9341_Init();
     XPT2046_Init();
     ILI9341_GramScan(6);
@@ -206,10 +286,15 @@ int main(void)
 
     create_ui();
 
+    /* ---- PWM 初始化，PA2(TIM2_CH3) 输出 ---- */
+    PWM_Init();
+
     /* 恢复上电值 */
     {
         lv_slider_set_value(g_slider, g_last_saved_val, LV_ANIM_OFF);
         lv_label_set_text_fmt(g_pct_label, "%d%%", g_last_saved_val);
+        g_pwm_duty = (uint8_t)g_last_saved_val;
+        pwm_apply();
     }
 
     /* WiFi 初始化 */
@@ -248,6 +333,13 @@ int main(void)
             }
         }
 
+        /* ---- 间断模式 0.5 秒翻转 (硬件 ms 时钟，不受主循环阻塞影响) ---- */
+        if (g_pwm_mode == PWM_MODE_INT && g_ms_tick - g_pwm_toggle_tick >= 500) {
+            g_pwm_toggle_tick = g_ms_tick;
+            g_pwm_output_on = !g_pwm_output_on;
+            pwm_apply();
+        }
+
         /* ---- 处理 HTTP 请求 ---- */
         uint16_t pl = sizeof(path) - 1;
         uint8_t  lid = 0;
@@ -257,9 +349,15 @@ int main(void)
             if (strncmp(path, "/set?val=", 9) == 0) {
                 int v = atoi(path + 9);
                 if (v < 0) v = 0; else if (v > 100) v = 100;
-                lv_slider_set_value(g_slider, v, LV_ANIM_ON);
+                lv_slider_set_value(g_slider, v, LV_ANIM_OFF);
                 lv_label_set_text_fmt(g_pct_label, "%d%%", v);
+                g_pwm_duty = (uint8_t)v;
+                pwm_apply();
             }
+
+            /* 先把屏幕刷完，再进阻塞的 HTTP 回复 */
+            lv_task_handler();
+            lv_tick_inc(1);
 
             build_html(html, sizeof(html),
                        (int)lv_slider_get_value(g_slider));
@@ -267,6 +365,10 @@ int main(void)
 
             { volatile uint32_t dd; for (dd = 0; dd < 200000; dd++); }
             ESP8266_CloseLink(lid);
+
+            /* 阻塞结束后追一下屏幕 */
+            lv_task_handler();
+            lv_tick_inc(1);
         }
     }
 }

@@ -36,6 +36,7 @@
 "..\..\output\palette.o"
 "..\..\output\bsp_esp8266.o"
 "..\..\output\bsp_at24c02.o"
+"..\..\output\bsp_pwm.o"
 "..\..\output\lv_disp.o"
 "..\..\output\lv_event.o"
 "..\..\output\lv_group.o"
